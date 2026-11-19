@@ -1,2 +1,4 @@
 public/
 .git/
+.cache/
+scripts/fetch-grid.mjs
