@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="Compare comfortable weather days, personal income tax and crypto regulation around the world."
+    />
+    <title>Comfort Atlas | World climate, tax & crypto</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script defer src="./vendor/d3.min.js"></script>
+    <script type="module" src="./atlas.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div class="brand">
+          <span class="brand-icon" aria-hidden="true">◎</span> Comfort Atlas
+        </div>
+        <a href="#methodology">Data & methodology</a>
+      </header>
+      <section class="intro">
+        <h1>Find your kind of weather.</h1>
+        <p>
+          Explore comfortable days around the world, then narrow the map by
+          income tax and crypto regulation.
+        </p>
+      </section>
+      <div class="workspace">
+        <aside class="controls" aria-label="Map filters">
+          <div class="panel-title">
+            <h2>Filters</h2>
+            <button id="reset" type="button" class="text-button">Reset</button>
+          </div>
+          <fieldset>
+            <legend>Comfortable weather</legend>
+            <div class="control">
+              <label for="low">Daily high, minimum</label
+              ><output for="low" id="low-value"></output
+              ><input id="low" type="range" min="-20" max="125" value="60" />
+            </div>
+            <div class="control">
+              <label for="high">Daily high, maximum</label
+              ><output for="high" id="high-value"></output
+              ><input id="high" type="range" min="-20" max="125" value="87" />
+            </div>
+            <div class="control">
+              <label for="dew">Maximum daily dew point</label
+              ><output for="dew" id="dew-value"></output
+              ><input id="dew" type="range" min="-20" max="90" value="60" />
+            </div>
+            <div class="control">
+              <label for="cloud">Mean daily cloud cover</label
+              ><output for="cloud" id="cloud-value"></output
+              ><input id="cloud" type="range" min="0" max="100" value="50" />
+            </div>
+          </fieldset>
+          <fieldset>
+            <legend>Tax & crypto</legend>
+            <div class="control">
+              <label for="tax">Top personal income tax</label
+              ><output for="tax" id="tax-value"></output
+              ><input id="tax" type="range" min="0" max="60" value="60" />
+            </div>
+            <label class="select-label" for="crypto"
+              >Crypto service provider rules</label
+            >
+            <select id="crypto">
+              <option value="all">Any status</option>
+              <option value="licensed">
+                Licensing or registration required
+              </option>
+              <option value="partial">Partial prohibition</option>
+              <option value="prohibited">Explicit prohibition</option>
+              <option value="other">Other or undecided</option>
+            </select>
+            <label class="toggle"
+              ><input id="unknown" type="checkbox" /> Include unknowns in active
+              filters</label
+            >
+          </fieldset>
+        </aside>
+        <section class="map-card" aria-labelledby="map-title">
+          <div class="map-header">
+            <div>
+              <h2 id="map-title">Comfortable days per year</h2>
+              <p id="map-subtitle">Loading historical weather…</p>
+            </div>
+            <div class="search">
+              <input
+                type="search"
+                id="search"
+                aria-label="Find a city or country"
+                placeholder="Find a city or country"
+                autocomplete="off"
+                aria-controls="search-results"
+              /><span aria-hidden="true">⌕</span>
+              <ul id="search-results" hidden></ul>
+            </div>
+          </div>
+          <div class="layer-bar" role="group" aria-label="Map layer">
+            <button type="button" data-layer="weather" aria-pressed="true">
+              Weather
+            </button>
+            <button type="button" data-layer="tax" aria-pressed="false">
+              Tax
+            </button>
+            <button type="button" data-layer="crypto" aria-pressed="false">
+              Crypto
+            </button>
+          </div>
+          <div id="map" aria-label="Interactive world map">
+            <svg
+              id="world"
+              viewBox="0 0 1000 510"
+              role="group"
+              aria-label="World map of countries and sample locations"
+            ></svg>
+            <div id="tooltip" hidden></div>
+            <div class="zoom" aria-label="Map zoom">
+              <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+              <button type="button" id="zoom-out" aria-label="Zoom out">
+                −
+              </button>
+              <button type="button" id="zoom-reset" aria-label="Reset map view">
+                ⌂
+              </button>
+            </div>
+          </div>
+          <div class="legend" id="legend"></div>
+          <div id="selection" class="selection" aria-live="polite">
+            <p>Select a city or country to see its weather and policy data.</p>
+          </div>
+        </section>
+      </div>
+      <section class="results" aria-labelledby="results-title">
+        <header>
+          <h2 id="results-title">Top weather matches</h2>
+          <p id="result-count" aria-live="polite"></p>
+        </header>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Location</th>
+                <th scope="col">Days / year</th>
+                <th scope="col">Top income tax</th>
+                <th scope="col">Crypto rules</th>
+              </tr>
+            </thead>
+            <tbody id="results"></tbody>
+          </table>
+        </div>
+      </section>
+      <details id="methodology">
+        <summary>Data & methodology</summary>
+        <p id="weather-method"></p>
+        <p>
+          Tax is the published top statutory personal income tax rate for
+          residents. The OECD series uses general government where applicable,
+          while supplemental jurisdiction summaries may measure national rates
+          only. Rates exclude individual reliefs and special regimes. Crypto
+          gains, staking, tax residency and citizenship can change the analysis.
+        </p>
+        <p>
+          Crypto is a July 2026 FATF snapshot of virtual asset service provider
+          rules. Categories reflect reported prohibition and licensing or
+          registration legislation. Other or undecided includes policies under
+          development. Coverage varies by jurisdiction and rules can change.
+        </p>
+        <ul>
+          <li>
+            <a href="https://open-meteo.com/en/docs/historical-weather-api"
+              >Open-Meteo historical weather API · Copernicus ERA5</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://data-explorer.oecd.org/vis?df%5Bag%5D=OECD.CTP.TPS&amp;df%5Bid%5D=DSD_TAX_PIT%40DF_PIT_TOP_EARN_THRESH&amp;df%5Bvs%5D=1.0"
+              >OECD top statutory personal income tax rates</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://taxsummaries.pwc.com/quick-charts/personal-income-tax-pit-rates"
+              >PwC territory tax summaries</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://www.fatf-gafi.org/en/publications/Fatfrecommendations/targeted-updated-virtualassets-vasps-2026.html"
+              >FATF 2026 virtual assets report, Annex A</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://www.naturalearthdata.com/downloads/110m-cultural-vectors/"
+              >Natural Earth map boundaries and populated places</a
+            >
+            · <a href="https://www.geonames.org/">GeoNames locations</a>
+          </li>
+        </ul>
+      </details>
+    </main>
+  </body>
+</html>
