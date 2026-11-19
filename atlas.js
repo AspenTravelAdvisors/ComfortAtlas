@@ -63,6 +63,9 @@ const sourceRoot = new URL("./data/", import.meta.url);
 const numberFormat = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
+// Outlines smaller than this many square units of the un-zoomed map (a few
+// thousand km²) also get a marker.
+const SMALL_AREA = 2.5;
 let layer = "weather";
 let active = null;
 
@@ -229,6 +232,9 @@ function swatch(label, color) {
 
 function drawLegend() {
   const legend = el("legend");
+  const small = Object.assign(swatch("Small jurisdiction", "#fff"), {
+    className: "legend-item dot large",
+  });
   if (layer === "weather") {
     legend.replaceChildren(
       weatherLegend(),
@@ -236,11 +242,13 @@ function drawLegend() {
       Object.assign(swatch("City sample (ERA5)", "#fff"), {
         className: "legend-item dot",
       }),
+      small,
     );
   } else if (layer === "tax") {
     legend.replaceChildren(
       scaleLegend(["0%", "15%", "30%", "45%", "60%+"], "tax"),
       swatch("No data"),
+      small,
     );
   } else {
     legend.replaceChildren(
@@ -248,6 +256,7 @@ function drawLegend() {
         swatch(text, cryptoColors[key]),
       ),
       swatch("No data"),
+      small,
     );
   }
 }
@@ -305,20 +314,35 @@ async function start() {
     .join("path")
     .attr("class", "country")
     .attr("d", path);
+  // Jurisdictions too small to see or click at world scale (Cayman Islands,
+  // Bermuda, Singapore, Malta, ...) also get a fixed-size marker. It sits on
+  // the jurisdiction's city sample when there is one, otherwise on its
+  // largest island or land area.
+  const markerAt = (code, feature) => {
+    const city = byCountry.get(code)?.[0];
+    if (city) return [city.lon, city.lat];
+    const { type, coordinates } = feature.geometry;
+    const polygons = type === "Polygon" ? [coordinates] : coordinates;
+    const largest = d3.greatest(polygons, (rings) =>
+      d3.geoArea({ type: "Polygon", coordinates: rings }),
+    );
+    return d3.geoCentroid({ type: "Polygon", coordinates: largest });
+  };
+  const markerData = countryFeatures
+    .filter((f) => path.area(f) < SMALL_AREA)
+    .map((f) => ({ code: f.properties.code, at: markerAt(f.properties.code, f) }));
   const mappedCodes = new Set(countryFeatures.map((f) => f.properties.code));
+  for (const [code, [city]] of byCountry)
+    if (!mappedCodes.has(code)) markerData.push({ code, at: [city.lon, city.lat] });
   const islands = camera
     .append("g")
     .selectAll("circle")
-    .data(
-      [...byCountry.values()]
-        .filter(([city]) => !mappedCodes.has(city.code))
-        .map(([city]) => city),
-    )
+    .data(markerData)
     .join("circle")
-    .attr("class", "place")
+    .attr("class", "place jurisdiction")
     .attr("r", 5)
-    .attr("cx", (city) => projection([city.lon, city.lat])[0])
-    .attr("cy", (city) => projection([city.lon, city.lat])[1]);
+    .attr("cx", (d) => projection(d.at)[0])
+    .attr("cy", (d) => projection(d.at)[1]);
   const points = camera
     .append("g")
     .selectAll("circle")
@@ -330,6 +354,7 @@ async function start() {
     .attr("cy", (city) => projection([city.lon, city.lat])[1]);
   const sums = new Map();
   const gridSums = new Map();
+  const cellSums = new Map();
   const cityCounts = new Map();
   const zoom = d3
     .zoom()
@@ -534,6 +559,7 @@ async function start() {
     const stats = node("ul");
     const samples = byCountry.get(code)?.length ?? 0;
     const fromGrid = country && gridSums.has(code);
+    const fromCell = country && cellSums.get(code);
     const weatherText =
       metric == null
         ? "Weather sample unavailable"
@@ -541,7 +567,9 @@ async function start() {
           " comfortable days" +
           (fromGrid
             ? " · land-area average"
-            : country
+            : fromCell
+              ? " · 1° cell at " + cellLabel(fromCell)
+              : country
               ? " · " +
                 samples +
                 (samples === 1 ? " sampled location" : " sampled locations")
@@ -604,11 +632,11 @@ async function start() {
     .on("pointerleave", tooltipOff)
     .on("click", (_, city) => select(city));
   islands
-    .on("pointermove", (event, city) =>
-      hover(event, countryName(city.code), hoverText(city.code)),
+    .on("pointermove", (event, d) =>
+      hover(event, countryName(d.code), hoverText(d.code, sums.get(d.code))),
     )
     .on("pointerleave", tooltipOff)
-    .on("click", (_, city) => select(entries.get(city.code)));
+    .on("click", (_, d) => select(entries.get(d.code)));
 
   function drawResults(filters) {
     const matches = cities
@@ -680,6 +708,15 @@ async function start() {
         gridSums.set(code, sum / weight);
         sums.set(code, sum / weight);
       }
+      // A small jurisdiction with no cell of its own and no city sample takes
+      // the value of the 1° cell it sits in, when that cell is on the grid.
+      for (const { code, at } of markerData) {
+        if (sums.has(code) && !cellSums.has(code)) continue;
+        const i = grid.index.get(Math.floor(at[1]) * 1000 + Math.floor(at[0]));
+        if (i === undefined) continue;
+        cellSums.set(code, { i, lon: at[0], lat: at[1] });
+        sums.set(code, grid.counts[i]);
+      }
       drawSurface();
     }
     countries
@@ -694,9 +731,8 @@ async function start() {
       .attr("fill", (city) => weatherColor(cityCounts.get(city.id)))
       .classed("dim", (city) => !passesPolicy(policy[city.code], filters));
     islands
-      .attr("display", layer === "weather" ? "none" : null)
-      .attr("fill", (city) => classifyColor(city.code))
-      .classed("dim", (city) => !passesPolicy(policy[city.code], filters));
+      .attr("fill", (d) => classifyColor(d.code, sums.get(d.code)))
+      .classed("dim", (d) => !passesPolicy(policy[d.code], filters));
     drawResults(filters);
     drawSelection();
   }
@@ -724,7 +760,7 @@ async function start() {
     weather.year +
     " daily NASA POWER data: MERRA-2 daily maximum temperature and daily mean dew point, and CERES daily mean cloud amount. Each cell averages the MERRA-2 points over its land. A day counts only when the maximum temperature is within the selected range, the dew point is at or below the cap, and cloud cover is at or below the cap. The grid uses mean rather than maximum dew point, so it is slightly more forgiving on humidity than the city samples. Country values are land-area averages of their cells. The " +
     cities.length +
-    " outlined dots are city samples from daily Copernicus ERA5 reanalysis via Open-Meteo, using maximum dew point and each city’s local time zone. The two sources can disagree, especially on coastal cloud. Both are one-year snapshots, and a 1° cell can miss local variation in terrain and climate.";
+    " outlined dots are city samples from daily Copernicus ERA5 reanalysis via Open-Meteo, using maximum dew point and each city’s local time zone. The two sources can disagree, especially on coastal cloud. Both are one-year snapshots, and a 1° cell can miss local variation in terrain and climate. Small jurisdictions such as the Cayman Islands, Bermuda and Malta have no grid cell of their own and are shown as larger circles: their value is their city sample, or else the 1° cell they sit in.";
 
   function setLayer(next) {
     layer = next;

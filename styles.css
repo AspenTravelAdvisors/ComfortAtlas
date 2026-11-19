@@ -428,6 +428,10 @@ select {
   border-radius: 50%;
   box-shadow: inset 0 0 0 1.5px #15342b;
 }
+.legend-item.dot.large .chip {
+  width: 12px;
+  height: 12px;
+}
 .surface {
   pointer-events: none;
 }
